@@ -202,11 +202,11 @@ echo -e "${CYAN}[*] Configuring ${country} on dedicated port ${port}...${NC}"
 
 sudo kill -9 $(sudo lsof -t -i:$port) >/dev/null 2>&1
 
-# بخش فوق العاده حیاتی: دانلود و تزریق دیتابیس جهانی و زنده برای حل مشکل اوبونتو ۲۲ و ۲۴ به صورت اتوماتیک
-echo -e "${YELLOW}[*] Updating Tor Global GeoIP Databases...${NC}"
+# دانلود و جایگزینی فایل متنی و استاندارد دیتابیس لوکیشن‌های رسمی تور
+echo -e "${YELLOW}[*] Injecting Verified Tor GeoIP Databases...${NC}"
 sudo mkdir -p /usr/share/tor/
-sudo curl -sL -o /usr/share/tor/geoip https://v2fly.github.io/geoip/geoip.dat
-sudo curl -sL -o /usr/share/tor/geoip6 https://v2fly.github.io/geoip/geoip.dat
+sudo curl -sL -o /usr/share/tor/geoip https://raw.githubusercontent.com/torproject/tor/main/src/config/geoip
+sudo curl -sL -o /usr/share/tor/geoip6 https://raw.githubusercontent.com/torproject/tor/main/src/config/geoip6
 
 sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
