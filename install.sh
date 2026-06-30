@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# رنگ‌ها برای منو
+# Color definitions
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
@@ -9,36 +9,48 @@ YELLOW='\033[0;33m'
 
 clear
 echo -e "${CYAN}=====================================${NC}"
-echo -e "${GREEN}    اسکریپت پیشرفته مدیریت چندلوکیشنی تور   ${NC}"
+echo -e "${GREEN}    Tor Multi-Location Manager       ${NC}"
 echo -e "${CYAN}=====================================${NC}"
 
-# ۱. منوی اصلی (نصب یا حذف)
-echo -e "1) ورود به منوی نصب و اضافه کردن لوکیشن"
-echo -e "2) حذف کامل سرویس تور از سرور"
-read -p "گزینه مورد نظر را انتخاب کنید: " main_choice
+# 1. Main Menu (Install or Uninstall)
+echo -e "1) Enter Location Installation Menu"
+echo -e "2) Uninstall Tor completely from Server"
+echo -e "0) Exit"
+echo -e "${CYAN}=====================================${NC}"
+read -p "Select option index: " main_choice
 
-# عملیات حذف کامل
+# Operation: Complete Uninstall
 if [ "$main_choice" == "2" ]; then
-    echo -e "${RED}[*] در حال حذف کامل تور و پاکسازی تنظیمات...${NC}"
-    sudo systemctl stop tor
+    echo -e "${RED}[*] Stopping and disabling all Tor instances...${NC}"
+    sudo systemctl stop "tor@*" 2>/dev/null
+    sudo systemctl stop tor 2>/dev/null
+    sudo systemctl disable "tor@*" 2>/dev/null
+    sudo systemctl disable tor 2>/dev/null
+    
+    echo -e "${RED}[*] Purging Tor packages and directories...${NC}"
     sudo apt-get purge tor -y
     sudo rm -rf /etc/tor/ /var/lib/tor/
-    echo -e "${GREEN}[+] تور با موفقیت کاملاً حذف شد.${NC}"
+    echo -e "${GREEN}[+] Tor has been completely uninstalled from the server.${NC}"
+    exit 0
+fi
+
+if [ "$main_choice" == "0" ] || [ -z "$main_choice" ]; then
+    echo "Exiting..."
     exit 0
 fi
 
 if [ "$main_choice" != "1" ]; then
-    echo -e "${RED}گزینه نامعتبر!${NC}"
+    echo -e "${RED}Invalid choice! Exiting...${NC}"
     exit 1
 fi
 
-# ۲. نصب پیش‌نیازها در صورت عدم وجود
+# 2. Install Prerequisites if not present
 if ! command -v tor &> /dev/null; then
-    echo -e "${CYAN}[*] در حال نصب تور...${NC}"
+    echo -e "${CYAN}[*] Installing Tor core package...${NC}"
     sudo apt update && sudo apt install tor -y
 fi
 
-# ۳. منوی لوکیشن‌ها دقیقاً مثل شات ترمیوس شما
+# 3. Locations Menu (Exactly matching your Termius layout)
 clear
 echo -e "${GREEN}Available Locations:${NC}"
 echo -e " 01 - [DE] [9080] - Germany"
@@ -81,7 +93,7 @@ echo -e " 00 - Back to main menu"
 echo ""
 read -p "Select location index: " loc_index
 
-# ست کردن پورت و کشور بر اساس انتخاب
+# Set port and country based on index
 case $loc_index in
     01|1) country="DE"; port=9080 ;;
     02|2) country="TR"; port=9081 ;;
@@ -119,44 +131,55 @@ case $loc_index in
     34) country="PT"; port=9113 ;;
     35) country="HU"; port=9114 ;;
     36) country="LU"; port=9115 ;;
-    00|0) echo "خروج..."; exit 0 ;;
-    *) echo -e "${RED}انتخاب نامعتبر!${NC}"; exit 1 ;;
+    00|0) echo "Returning..."; exit 0 ;;
+    *) echo -e "${RED}Invalid selection!${NC}"; exit 1 ;;
 esac
 
-# ۴. اضافه کردن کانفیگ بدون پاک کردن کانفیگ‌های قبلی
-# برای اینکه لوکیشن‌ها کنار هم کار کنند، تنظیمات هر لوکیشن را در یک فایل مجزا در دایرکتوری تور می‌سازیم.
-echo -e "${CYAN}[*] در حال کانفیگ لوکیشن ${country} روی پورت اختصاصی ${port}...${NC}"
+# 4. Multi-instance Configuration (Bug-Free Method)
+echo -e "${CYAN}[*] Configuring ${country} on dedicated port ${port}...${NC}"
 
-# ایجاد پوشه دیتا اختصاصی برای هر پورت جهت جلوگیری از تداخل مدارها
+# Setup separate data directory for isolation
 sudo mkdir -p /var/lib/tor/tor_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/tor_$port/
+sudo chmod 700 /var/lib/tor/tor_$port/
 
-cat << ENF | sudo tee /etc/tor/torrc.$port
+# Generate unique config file for this instance
+cat << ENF | sudo tee /etc/tor/torrc.$port > /dev/null
 SocksPort 127.0.0.1:$port
 ExitNodes {$country}
 StrictNodes 1
 DataDirectory /var/lib/tor/tor_$port
+PidFile /var/run/tor/tor_$port.pid
+Log notice file /var/log/tor/notices_$port.log
 ENF
 
-# اضافه کردن این فایل به کانفیگ اصلی تور در صورت عدم وجود
-if ! grep -q "torrc.$port" /etc/tor/torrc; then
-    echo "%include /etc/tor/torrc.$port" | sudo tee -a /etc/tor/torrc
+# Link instance config to Tor multi-instance generator
+sudo ln -sf /etc/tor/torrc.$port /etc/tor/instances/$port
+
+# 5. Start and Enable the specific instance service
+echo -e "${CYAN}[*] Starting Tor instance for port ${port}...${NC}"
+sudo systemctl daemon-reload
+sudo systemctl stop tor@$port 2>/dev/null
+sudo systemctl start tor@$port
+sudo systemctl enable tor@$port
+
+echo -e "${GREEN}[+] Instance started successfully. Waiting 6 seconds for circuit build...${NC}"
+sleep 6
+
+# 6. Test outbound IP connectivity
+echo -e "${CYAN}[*] Testing connection response via port ${port}:${NC}"
+curl_res=$(curl --socks5-hostname 127.0.0.1:$port -s https://ip2c.org/self)
+
+if [[ $curl_res == *"1;"* ]]; then
+    echo -e "${GREEN}[SUCCESS] Outbound IP Details: $curl_res${NC}"
+else
+    echo -e "${RED}[WARNING] Test failed or delayed. Current response: $curl_res${NC}"
+    echo -e "${YELLOW}Tor is running, but building this specific circuit might take up to 1-2 minutes.${NC}"
 fi
 
-# ۵. ریستارت سرویس تور برای اعمال پورت جدید
-echo -e "${CYAN}[*] در حال ریستارت سرویس تور...${NC}"
-sudo systemctl restart tor
-
-echo -e "${GREEN}[+] لوکیشن با موفقیت فعال شد. ۵ ثانیه صبر کنید برای تست آی‌پی...${NC}"
-sleep 5
-
-# ۶. تست خروجی پورت ساخته شده
-echo -e "${CYAN}[*] نتیجه تست آی‌پی روی پورت ${port}:${NC}"
-curl --socks5-hostname 127.0.0.1:$port https://ip2c.org/self
-
 echo -e "\n${YELLOW}=====================================${NC}"
-echo -e "لوکیشن ${GREEN}${country}${NC} با موفقیت در پس‌زمینه فعال ماند!"
-echo -e "حالا می‌توانید در پنل X-UI یک Outbound جدید بسازید:"
-echo -e "پروتکل: ${GREEN}Socks${NC} | آی‌پـی: ${GREEN}127.0.0.1${NC} | پورت: ${GREEN}$port${NC}"
-echo -e "${YELLOW}نکته:${NC} شما می‌توانید دوباره اسکریپت را ران کنید و لوکیشن‌های دیگر را هم بدون حذف شدن این لوکیشن اضافه کنید."
+echo -e "Location ${GREEN}${country}${NC} is successfully deployed in background!"
+echo -e "You can now add it inside X-UI Outbound Panel:"
+echo -e "Protocol: ${GREEN}Socks${NC} | IP: ${GREEN}127.0.0.1${NC} | Port: ${GREEN}$port${NC}"
+echo -e "${YELLOW}Notice:${NC} You can re-run this script anytime to add more locations simultaneously."
 echo -e "${YELLOW}=====================================${NC}"
