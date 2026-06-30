@@ -109,7 +109,6 @@ if ! command -v tor &> /dev/null; then
     sudo apt update && sudo apt install tor tor-geoipdb -y
 fi
 
-# خاموش کردن و ماسک کردن سرویس پیش‌فرض برای جلوگیری از تداخل لایه‌ها
 sudo systemctl stop tor 2>/dev/null
 sudo systemctl disable tor 2>/dev/null
 sudo systemctl mask tor 2>/dev/null
@@ -201,15 +200,12 @@ esac
 # 4. Independent Multi-instance Configuration
 echo -e "${CYAN}[*] Configuring ${country} on dedicated port ${port}...${NC}"
 
-# پاکسازی فرآیندهای مرده احتمالی روی این پورت
 sudo kill -9 $(sudo lsof -t -i:$port) >/dev/null 2>&1
 
-# ساخت دایرکتوری پایدار دیتا با مالیکت استاندارد
 sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
 sudo chmod 700 /var/lib/tor/custom_$port/
 
-# بازنویسی فیزیکی کانفیگ تور (بدون تداخل آپشن User)
 cat << ENF | sudo tee /etc/tor/torrc.custom_$port > /dev/null
 SocksPort 127.0.0.1:$port
 ExitNodes {$country}
@@ -217,7 +213,7 @@ StrictNodes 1
 DataDirectory /var/lib/tor/custom_$port
 ENF
 
-# 5. Create Standalone Systemd Service (اصلاح ساختار Permission لینوکس)
+# 5. Create Standalone Systemd Service
 cat << ENF | sudo tee /etc/systemd/system/tor-custom-$port.service > /dev/null
 [Unit]
 Description=Tor custom instance on port $port for $country
@@ -243,8 +239,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable tor-custom-$port >/dev/null 2>&1
 sudo systemctl restart tor-custom-$port
 
-echo -e "${GREEN}[+] Service started. Waiting 25 seconds for Tor circuit to build...${NC}"
-sleep 25
+# افزایش زمان انتظار به ۵۰ ثانیه برای تضمین ۱۰۰٪ ساخته شدن مدار تور و لود بی نقص در ثنایی
+echo -e "${GREEN}[+] Service started. Waiting 50 seconds for Tor circuit to build...${NC}"
+sleep 50
 
 # 6. Test outbound IP connectivity
 echo -e "${CYAN}[*] Testing connection response via port ${port}:${NC}"
