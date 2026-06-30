@@ -12,15 +12,71 @@ echo -e "${CYAN}=====================================${NC}"
 echo -e "${GREEN}    Tor Multi-Location Manager       ${NC}"
 echo -e "${CYAN}=====================================${NC}"
 
-# 1. Main Menu (Install or Uninstall)
+# 1. Main Menu (Install, Delete Single, or Uninstall All)
 echo -e "1) Enter Location Installation Menu"
-echo -e "2) Uninstall Tor completely from Server"
+echo -e "2) Remove a Specific Installed Location"
+echo -e "3) Uninstall Tor completely from Server"
 echo -e "0) Exit"
 echo -e "${CYAN}=====================================${NC}"
 read -p "Select option index: " main_choice
 
-# Operation: Complete Uninstall
+# Operation 2: Remove a Specific Installed Location
 if [ "$main_choice" == "2" ]; then
+    clear
+    echo -e "${YELLOW}Scanning for active custom locations...${NC}"
+    # Find all active custom tor systemd services
+    services=$(ls /etc/systemd/system/tor-custom-*.service 2>/dev/null)
+    
+    if [ -z "$services" ]; then
+        echo -e "${RED}[!] No custom locations found installed on this server.${NC}"
+        exit 0
+    fi
+    
+    echo -e "${GREEN}Currently Installed Ports & Locations:${NC}"
+    echo -e "-------------------------------------"
+    
+    # Loop and display active configurations
+    declare -A active_ports
+    count=1
+    for svc in $services; do
+        port=$(basename "$svc" | grep -o '[0-9]\+')
+        country=$(grep "ExitNodes" "/etc/tor/torrc.custom_$port" | grep -o '[A-Z]\{2\}')
+        echo -e " $count) Port: [${GREEN}$port${NC}] -> Location: [${GREEN}$country${NC}]"
+        active_ports[$count]=$port
+        ((count++))
+    done
+    echo -e " 0) Back to main menu"
+    echo -e "-------------------------------------"
+    read -p "Select the index number to REMOVE: " del_index
+    
+    if [ "$del_index" == "0" ] || [ -z "$del_index" ]; then
+        echo "Returning..."
+        exit 0
+    fi
+    
+    target_port=${active_ports[$del_index]}
+    
+    if [ -z "$target_port" ]; then
+        echo -e "${RED}Invalid index! Exiting...${NC}"
+        exit 1
+    fi
+    
+    echo -e "${RED}[*] Stopping and disabling location on port $target_port...${NC}"
+    sudo systemctl stop tor-custom-$target_port 2>/dev/null
+    sudo systemctl disable tor-custom-$target_port >/dev/null 2>&1
+    
+    echo -e "${RED}[*] Cleaning up configuration and data directories...${NC}"
+    sudo rm -f /etc/systemd/system/tor-custom-$target_port.service
+    sudo rm -f /etc/tor/torrc.custom_$target_port
+    sudo rm -rf /var/lib/tor/custom_$target_port
+    
+    sudo systemctl daemon-reload
+    echo -e "${GREEN}[SUCCESS] Location on port $target_port has been cleanly uninstalled!${NC}"
+    exit 0
+fi
+
+# Operation 3: Complete Uninstall All
+if [ "$main_choice" == "3" ]; then
     echo -e "${RED}[*] Stopping and disabling all custom Tor services...${NC}"
     sudo systemctl stop "tor-custom-*" 2>/dev/null
     sudo systemctl disable "tor-custom-*" 2>/dev/null
@@ -184,8 +240,8 @@ sudo systemctl stop tor-custom-$port 2>/dev/null
 sudo systemctl start tor-custom-$port
 sudo systemctl enable tor-custom-$port >/dev/null 2>&1
 
-echo -e "${GREEN}[+] Service started. Waiting 12 seconds for Tor circuit to build...${NC}"
-sleep 12
+echo -e "${GREEN}[+] Service started. Waiting 22 seconds for Tor circuit to build...${NC}"
+sleep 22
 
 # 6. Test outbound IP connectivity
 echo -e "${CYAN}[*] Testing connection response via port ${port}:${NC}"
