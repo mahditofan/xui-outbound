@@ -38,10 +38,12 @@ if [ "$main_choice" == "2" ]; then
     count=1
     for svc in $services; do
         port=$(basename "$svc" | grep -o '[0-9]\+')
-        country=$(grep "ExitNodes" "/etc/tor/torrc.custom_$port" | grep -o '[A-Z]\{2\}')
-        echo -e " $count) Port: [${GREEN}$port${NC}] -> Location: [${GREEN}$country${NC}]"
-        active_ports[$count]=$port
-        ((count++))
+        if [ -f "/etc/tor/torrc.custom_$port" ]; then
+            country=$(grep "ExitNodes" "/etc/tor/torrc.custom_$port" | grep -o '[A-Z]\{2\}')
+            echo -e " $count) Port: [${GREEN}$port${NC}] -> Location: [${GREEN}$country${NC}]"
+            active_ports[$count]=$port
+            ((count++))
+        fi
     done
     echo -e " 0) Back to main menu"
     echo -e "-------------------------------------"
@@ -67,7 +69,6 @@ if [ "$main_choice" == "2" ]; then
     sudo rm -f /etc/systemd/system/tor-custom-$target_port.service
     sudo rm -f /etc/tor/torrc.custom_$target_port
     sudo rm -rf /var/lib/tor/custom_$target_port
-    sudo rm -f /var/run/tor/custom_$target_port.pid
     
     sudo systemctl daemon-reload
     echo -e "${GREEN}[SUCCESS] Location on port $target_port has been cleanly uninstalled!${NC}"
@@ -80,12 +81,13 @@ if [ "$main_choice" == "3" ]; then
     sudo systemctl stop "tor-custom-*" 2>/dev/null
     sudo systemctl disable "tor-custom-*" 2>/dev/null
     sudo rm -f /etc/systemd/system/tor-custom-*.service
+    sudo rm -f /etc/tor/torrc.custom_*
     sudo systemctl daemon-reload
     
     echo -e "${RED}[*] Purging Tor packages and directories...${NC}"
     sudo systemctl stop tor 2>/dev/null
     sudo systemctl disable tor 2>/dev/null
-    sudo apt-get purge tor -y
+    sudo apt-get purge tor tor-geoipdb -y
     sudo rm -rf /etc/tor/ /var/lib/tor/
     echo -e "${GREEN}[+] Tor has been completely uninstalled from the server.${NC}"
     exit 0
@@ -104,11 +106,13 @@ fi
 # 2. Install Prerequisites if not present
 if ! command -v tor &> /dev/null; then
     echo -e "${CYAN}[*] Installing Tor core package...${NC}"
-    sudo apt update && sudo apt install tor -y
+    sudo apt update && sudo apt install tor tor-geoipdb -y
 fi
 
+# خاموش کردن و ماسک کردن سرویس پیش‌فرض برای جلوگیری از تداخل لایه‌ها
 sudo systemctl stop tor 2>/dev/null
 sudo systemctl disable tor 2>/dev/null
+sudo systemctl mask tor 2>/dev/null
 
 # 3. Locations Menu
 clear
@@ -197,23 +201,23 @@ esac
 # 4. Independent Multi-instance Configuration
 echo -e "${CYAN}[*] Configuring ${country} on dedicated port ${port}...${NC}"
 
+# پاکسازی فرآیندهای مرده احتمالی روی این پورت
+sudo kill -9 $(sudo lsof -t -i:$port) >/dev/null 2>&1
+
+# ساخت دایرکتوری پایدار دیتا با مالیکت استاندارد
 sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
 sudo chmod 700 /var/lib/tor/custom_$port/
 
-# تغییر حیاتی: انتقال فایل PID به دایرکتوری پایدار برای جلوگیری از کرش بعد از ریبوت
+# بازنویسی فیزیکی کانفیگ تور (بدون تداخل آپشن User)
 cat << ENF | sudo tee /etc/tor/torrc.custom_$port > /dev/null
 SocksPort 127.0.0.1:$port
 ExitNodes {$country}
 StrictNodes 1
 DataDirectory /var/lib/tor/custom_$port
-PidFile /var/lib/tor/custom_$port/tor.pid
-Log notice file /var/lib/tor/custom_$port/tor.log
-User debian-tor
 ENF
 
-# 5. Create Standalone Systemd Service
-# تغییر حیاتی: اضافه کردن دستور خودکار ساخت پوشه ران قبل از استارت برای تضمین ۱۰۰٪ بعد ریبوت
+# 5. Create Standalone Systemd Service (اصلاح ساختار Permission لینوکس)
 cat << ENF | sudo tee /etc/systemd/system/tor-custom-$port.service > /dev/null
 [Unit]
 Description=Tor custom instance on port $port for $country
@@ -221,13 +225,13 @@ After=network.target
 
 [Service]
 Type=simple
-RuntimeDirectory=tor
-RuntimeDirectoryMode=0755
-ExecStartPre=/usr/bin/install -d -m 0755 -o debian-tor -g debian-tor /var/run/tor
+User=debian-tor
+Group=debian-tor
 ExecStart=/usr/bin/tor -f /etc/tor/torrc.custom_$port
 KillSignal=SIGINT
-TimeoutSec=60
+TimeoutSec=30
 Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -236,12 +240,11 @@ ENF
 # Start and Enable the custom service
 echo -e "${CYAN}[*] Starting custom Tor service for port ${port}...${NC}"
 sudo systemctl daemon-reload
-sudo systemctl stop tor-custom-$port 2>/dev/null
-sudo systemctl start tor-custom-$port
 sudo systemctl enable tor-custom-$port >/dev/null 2>&1
+sudo systemctl restart tor-custom-$port
 
-echo -e "${GREEN}[+] Service started. Waiting 22 seconds for Tor circuit to build...${NC}"
-sleep 22
+echo -e "${GREEN}[+] Service started. Waiting 25 seconds for Tor circuit to build...${NC}"
+sleep 25
 
 # 6. Test outbound IP connectivity
 echo -e "${CYAN}[*] Testing connection response via port ${port}:${NC}"
