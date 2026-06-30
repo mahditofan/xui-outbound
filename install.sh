@@ -135,11 +135,13 @@ case $loc_index in
     *) echo -e "${RED}Invalid selection!${NC}"; exit 1 ;;
 esac
 
-# 4. Multi-instance Configuration (Bug-Free Method)
+# 4. Multi-instance Configuration (Fixed Bug)
 echo -e "${CYAN}[*] Configuring ${country} on dedicated port ${port}...${NC}"
 
-# Setup separate data directory for isolation
+# Fix: Ensure required directories exist before linking
+sudo mkdir -p /etc/tor/instances
 sudo mkdir -p /var/lib/tor/tor_$port
+
 sudo chown -R debian-tor:debian-tor /var/lib/tor/tor_$port/
 sudo chmod 700 /var/lib/tor/tor_$port/
 
@@ -163,8 +165,8 @@ sudo systemctl stop tor@$port 2>/dev/null
 sudo systemctl start tor@$port
 sudo systemctl enable tor@$port
 
-echo -e "${GREEN}[+] Instance started successfully. Waiting 6 seconds for circuit build...${NC}"
-sleep 6
+echo -e "${GREEN}[+] Instance started successfully. Waiting 8 seconds for circuit build...${NC}"
+sleep 8
 
 # 6. Test outbound IP connectivity
 echo -e "${CYAN}[*] Testing connection response via port ${port}:${NC}"
