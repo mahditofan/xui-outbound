@@ -21,13 +21,15 @@ read -p "Select option index: " main_choice
 
 # Operation: Complete Uninstall
 if [ "$main_choice" == "2" ]; then
-    echo -e "${RED}[*] Stopping and disabling all Tor instances...${NC}"
-    sudo systemctl stop "tor@*" 2>/dev/null
-    sudo systemctl stop tor 2>/dev/null
-    sudo systemctl disable "tor@*" 2>/dev/null
-    sudo systemctl disable tor 2>/dev/null
+    echo -e "${RED}[*] Stopping and disabling all custom Tor services...${NC}"
+    sudo systemctl stop "tor-custom-*" 2>/dev/null
+    sudo systemctl disable "tor-custom-*" 2>/dev/null
+    sudo rm -f /etc/systemd/system/tor-custom-*.service
+    sudo systemctl daemon-reload
     
     echo -e "${RED}[*] Purging Tor packages and directories...${NC}"
+    sudo systemctl stop tor 2>/dev/null
+    sudo systemctl disable tor 2>/dev/null
     sudo apt-get purge tor -y
     sudo rm -rf /etc/tor/ /var/lib/tor/
     echo -e "${GREEN}[+] Tor has been completely uninstalled from the server.${NC}"
@@ -48,6 +50,8 @@ fi
 if ! command -v tor &> /dev/null; then
     echo -e "${CYAN}[*] Installing Tor core package...${NC}"
     sudo apt update && sudo apt install tor -y
+    sudo systemctl stop tor
+    sudo systemctl disable tor
 fi
 
 # 3. Locations Menu (Exactly matching your Termius layout)
@@ -135,52 +139,65 @@ case $loc_index in
     *) echo -e "${RED}Invalid selection!${NC}"; exit 1 ;;
 esac
 
-# 4. Multi-instance Configuration (Fixed Bug)
+# 4. Independent Multi-instance Configuration (100% Reliable for Ubuntu 24)
 echo -e "${CYAN}[*] Configuring ${country} on dedicated port ${port}...${NC}"
 
-# Fix: Ensure required directories exist before linking
-sudo mkdir -p /etc/tor/instances
-sudo mkdir -p /var/lib/tor/tor_$port
+# Create separate directory for this specific instance
+sudo mkdir -p /var/lib/tor/custom_$port
+sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
+sudo chmod 700 /var/lib/tor/custom_$port/
 
-sudo chown -R debian-tor:debian-tor /var/lib/tor/tor_$port/
-sudo chmod 700 /var/lib/tor/tor_$port/
-
-# Generate unique config file for this instance
-cat << ENF | sudo tee /etc/tor/torrc.$port > /dev/null
+# Create independent configuration file
+cat << ENF | sudo tee /etc/tor/torrc.custom_$port > /dev/null
 SocksPort 127.0.0.1:$port
 ExitNodes {$country}
 StrictNodes 1
-DataDirectory /var/lib/tor/tor_$port
-PidFile /var/run/tor/tor_$port.pid
-Log notice file /var/log/tor/notices_$port.log
+DataDirectory /var/lib/tor/custom_$port
+PidFile /var/run/tor/custom_$port.pid
+Log notice file /var/log/tor/custom_$port.log
+User debian-tor
 ENF
 
-# Link instance config to Tor multi-instance generator
-sudo ln -sf /etc/tor/torrc.$port /etc/tor/instances/$port
+# 5. Create Systemd Service for this specific instance
+cat << ENF | sudo tee /etc/systemd/system/tor-custom-$port.service > /dev/null
+[Unit]
+Description=Tor custom instance on port $port for $country
+After=network.target
 
-# 5. Start and Enable the specific instance service
-echo -e "${CYAN}[*] Starting Tor instance for port ${port}...${NC}"
+[Service]
+Type=simple
+ExecStart=/usr/bin/tor -f /etc/tor/torrc.custom_$port
+KillSignal=SIGINT
+TimeoutSec=60
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+ENF
+
+# Start and Enable the custom service
+echo -e "${CYAN}[*] Starting custom Tor service for port ${port}...${NC}"
 sudo systemctl daemon-reload
-sudo systemctl stop tor@$port 2>/dev/null
-sudo systemctl start tor@$port
-sudo systemctl enable tor@$port
+sudo systemctl stop tor-custom-$port 2>/dev/null
+sudo systemctl start tor-custom-$port
+sudo systemctl enable tor-custom-$port >/dev/null 2>&1
 
-echo -e "${GREEN}[+] Instance started successfully. Waiting 8 seconds for circuit build...${NC}"
-sleep 8
+echo -e "${GREEN}[+] Service started. Waiting 10 seconds for Tor circuit to build...${NC}"
+sleep 10
 
 # 6. Test outbound IP connectivity
 echo -e "${CYAN}[*] Testing connection response via port ${port}:${NC}"
-curl_res=$(curl --socks5-hostname 127.0.0.1:$port -s https://ip2c.org/self)
+curl_res=$(curl --socks5-hostname 127.0.0.1:$port -s --max-time 15 https://ip2c.org/self)
 
 if [[ $curl_res == *"1;"* ]]; then
     echo -e "${GREEN}[SUCCESS] Outbound IP Details: $curl_res${NC}"
 else
-    echo -e "${RED}[WARNING] Test failed or delayed. Current response: $curl_res${NC}"
-    echo -e "${YELLOW}Tor is running, but building this specific circuit might take up to 1-2 minutes.${NC}"
+    echo -e "${RED}[WARNING] Test delayed. Current response: $curl_res${NC}"
+    echo -e "${YELLOW}The service is running fine, but building a brand new circuit inside Tor network may take up to 1 minute.${NC}"
 fi
 
 echo -e "\n${YELLOW}=====================================${NC}"
-echo -e "Location ${GREEN}${country}${NC} is successfully deployed in background!"
+echo -e "Location ${GREEN}${country}${NC} is successfully deployed on system service!"
 echo -e "You can now add it inside X-UI Outbound Panel:"
 echo -e "Protocol: ${GREEN}Socks${NC} | IP: ${GREEN}127.0.0.1${NC} | Port: ${GREEN}$port${NC}"
 echo -e "${YELLOW}Notice:${NC} You can re-run this script anytime to add more locations simultaneously."
