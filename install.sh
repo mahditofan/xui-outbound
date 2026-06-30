@@ -87,8 +87,8 @@ if [ "$main_choice" == "3" ]; then
     echo -e "${RED}[*] Purging Tor packages and directories...${NC}"
     sudo systemctl stop tor 2>/dev/null
     sudo systemctl disable tor 2>/dev/null
-    sudo apt-get purge tor tor-geoipdb -y
-    sudo rm -rf /etc/tor/ /var/lib/tor/
+    sudo apt-get purge tor -y
+    sudo rm -rf /etc/tor/ /var/lib/tor/ /usr/share/tor/
     echo -e "${GREEN}[+] Tor has been completely uninstalled from the server.${NC}"
     exit 0
 fi
@@ -106,7 +106,7 @@ fi
 # 2. Install Prerequisites if not present
 if ! command -v tor &> /dev/null; then
     echo -e "${CYAN}[*] Installing Tor core package...${NC}"
-    sudo apt update && sudo apt install tor tor-geoipdb -y
+    sudo apt update && sudo apt install tor -y
 fi
 
 sudo systemctl stop tor 2>/dev/null
@@ -202,6 +202,12 @@ echo -e "${CYAN}[*] Configuring ${country} on dedicated port ${port}...${NC}"
 
 sudo kill -9 $(sudo lsof -t -i:$port) >/dev/null 2>&1
 
+# بخش فوق العاده حیاتی: دانلود و تزریق دیتابیس جهانی و زنده برای حل مشکل اوبونتو ۲۲ و ۲۴ به صورت اتوماتیک
+echo -e "${YELLOW}[*] Updating Tor Global GeoIP Databases...${NC}"
+sudo mkdir -p /usr/share/tor/
+sudo curl -sL -o /usr/share/tor/geoip https://v2fly.github.io/geoip/geoip.dat
+sudo curl -sL -o /usr/share/tor/geoip6 https://v2fly.github.io/geoip/geoip.dat
+
 sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
 sudo chmod 700 /var/lib/tor/custom_$port/
@@ -211,6 +217,8 @@ SocksPort 127.0.0.1:$port
 ExitNodes {$country}
 StrictNodes 1
 DataDirectory /var/lib/tor/custom_$port
+GeoIPFile /usr/share/tor/geoip
+GeoIPv6File /usr/share/tor/geoip6
 ENF
 
 # 5. Create Standalone Systemd Service
@@ -239,7 +247,6 @@ sudo systemctl daemon-reload
 sudo systemctl enable tor-custom-$port >/dev/null 2>&1
 sudo systemctl restart tor-custom-$port
 
-# افزایش زمان انتظار به ۵۰ ثانیه برای تضمین ۱۰۰٪ ساخته شدن مدار تور و لود بی نقص در ثنایی
 echo -e "${GREEN}[+] Service started. Waiting 50 seconds for Tor circuit to build...${NC}"
 sleep 50
 
