@@ -12,9 +12,9 @@ echo -e "${CYAN}=====================================${NC}"
 echo -e "${GREEN}    Tor Multi-Location Manager       ${NC}"
 echo -e "${CYAN}=====================================${NC}"
 
-# 1. Main Menu (Install, Delete Single, or Uninstall All)
+# 1. Main Menu
 echo -e "1) Enter Location Installation Menu"
-echo -e "2) Remove a Specific Installed Location"
+echo -e "2) Remove a Specific Installed Location (Delete Single Port)"
 echo -e "3) Uninstall Tor completely from Server"
 echo -e "0) Exit"
 echo -e "${CYAN}=====================================${NC}"
@@ -24,7 +24,6 @@ read -p "Select option index: " main_choice
 if [ "$main_choice" == "2" ]; then
     clear
     echo -e "${YELLOW}Scanning for active custom locations...${NC}"
-    # Find all active custom tor systemd services
     services=$(ls /etc/systemd/system/tor-custom-*.service 2>/dev/null)
     
     if [ -z "$services" ]; then
@@ -35,7 +34,6 @@ if [ "$main_choice" == "2" ]; then
     echo -e "${GREEN}Currently Installed Ports & Locations:${NC}"
     echo -e "-------------------------------------"
     
-    # Loop and display active configurations
     declare -A active_ports
     count=1
     for svc in $services; do
@@ -69,6 +67,7 @@ if [ "$main_choice" == "2" ]; then
     sudo rm -f /etc/systemd/system/tor-custom-$target_port.service
     sudo rm -f /etc/tor/torrc.custom_$target_port
     sudo rm -rf /var/lib/tor/custom_$target_port
+    sudo rm -f /var/run/tor/custom_$target_port.pid
     
     sudo systemctl daemon-reload
     echo -e "${GREEN}[SUCCESS] Location on port $target_port has been cleanly uninstalled!${NC}"
@@ -108,11 +107,10 @@ if ! command -v tor &> /dev/null; then
     sudo apt update && sudo apt install tor -y
 fi
 
-# Stop and disable default tor service to free ports and resources
 sudo systemctl stop tor 2>/dev/null
 sudo systemctl disable tor 2>/dev/null
 
-# 3. Locations Menu (Exactly matching your Termius layout)
+# 3. Locations Menu
 clear
 echo -e "${GREEN}Available Locations:${NC}"
 echo -e " 01 - [DE] [9080] - Germany"
@@ -155,7 +153,6 @@ echo -e " 00 - Back to main menu"
 echo ""
 read -p "Select location index: " loc_index
 
-# Set port and country based on index
 case $loc_index in
     01|1) country="DE"; port=9080 ;;
     02|2) country="TR"; port=9081 ;;
@@ -200,23 +197,23 @@ esac
 # 4. Independent Multi-instance Configuration
 echo -e "${CYAN}[*] Configuring ${country} on dedicated port ${port}...${NC}"
 
-# Create isolated directory
 sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
 sudo chmod 700 /var/lib/tor/custom_$port/
 
-# Create independent configuration file
+# تغییر حیاتی: انتقال فایل PID به دایرکتوری پایدار برای جلوگیری از کرش بعد از ریبوت
 cat << ENF | sudo tee /etc/tor/torrc.custom_$port > /dev/null
 SocksPort 127.0.0.1:$port
 ExitNodes {$country}
 StrictNodes 1
 DataDirectory /var/lib/tor/custom_$port
-PidFile /var/run/tor/custom_$port.pid
-Log notice file /var/log/tor/custom_$port.log
+PidFile /var/lib/tor/custom_$port/tor.pid
+Log notice file /var/lib/tor/custom_$port/tor.log
 User debian-tor
 ENF
 
 # 5. Create Standalone Systemd Service
+# تغییر حیاتی: اضافه کردن دستور خودکار ساخت پوشه ران قبل از استارت برای تضمین ۱۰۰٪ بعد ریبوت
 cat << ENF | sudo tee /etc/systemd/system/tor-custom-$port.service > /dev/null
 [Unit]
 Description=Tor custom instance on port $port for $country
@@ -224,6 +221,9 @@ After=network.target
 
 [Service]
 Type=simple
+RuntimeDirectory=tor
+RuntimeDirectoryMode=0755
+ExecStartPre=/usr/bin/install -d -m 0755 -o debian-tor -g debian-tor /var/run/tor
 ExecStart=/usr/bin/tor -f /etc/tor/torrc.custom_$port
 KillSignal=SIGINT
 TimeoutSec=60
