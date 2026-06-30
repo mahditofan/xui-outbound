@@ -50,9 +50,11 @@ fi
 if ! command -v tor &> /dev/null; then
     echo -e "${CYAN}[*] Installing Tor core package...${NC}"
     sudo apt update && sudo apt install tor -y
-    sudo systemctl stop tor
-    sudo systemctl disable tor
 fi
+
+# Stop and disable default tor service to free ports and resources
+sudo systemctl stop tor 2>/dev/null
+sudo systemctl disable tor 2>/dev/null
 
 # 3. Locations Menu (Exactly matching your Termius layout)
 clear
@@ -139,10 +141,10 @@ case $loc_index in
     *) echo -e "${RED}Invalid selection!${NC}"; exit 1 ;;
 esac
 
-# 4. Independent Multi-instance Configuration (100% Reliable for Ubuntu 24)
+# 4. Independent Multi-instance Configuration
 echo -e "${CYAN}[*] Configuring ${country} on dedicated port ${port}...${NC}"
 
-# Create separate directory for this specific instance
+# Create isolated directory
 sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
 sudo chmod 700 /var/lib/tor/custom_$port/
@@ -158,7 +160,7 @@ Log notice file /var/log/tor/custom_$port.log
 User debian-tor
 ENF
 
-# 5. Create Systemd Service for this specific instance
+# 5. Create Standalone Systemd Service
 cat << ENF | sudo tee /etc/systemd/system/tor-custom-$port.service > /dev/null
 [Unit]
 Description=Tor custom instance on port $port for $country
@@ -182,8 +184,8 @@ sudo systemctl stop tor-custom-$port 2>/dev/null
 sudo systemctl start tor-custom-$port
 sudo systemctl enable tor-custom-$port >/dev/null 2>&1
 
-echo -e "${GREEN}[+] Service started. Waiting 10 seconds for Tor circuit to build...${NC}"
-sleep 10
+echo -e "${GREEN}[+] Service started. Waiting 12 seconds for Tor circuit to build...${NC}"
+sleep 12
 
 # 6. Test outbound IP connectivity
 echo -e "${CYAN}[*] Testing connection response via port ${port}:${NC}"
