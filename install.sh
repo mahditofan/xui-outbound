@@ -206,18 +206,19 @@ sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
 sudo chmod 700 /var/lib/tor/custom_$port/
 
-# کانفیگ سوپرکلین و پرسرعت: رفرش مدار روی ۱۰ ثانیه برای عبور آنی از آی‌پی‌های کثیف
-cat << ENF | sudo tee /etc/tor/torrc.custom_$port > /dev/null
+# رفع ارور ساختاری کانفیگ و فیکس مشکل یک‌بار باز کردن و یک‌بار باز نکردن
+sudo tee /etc/tor/torrc.custom_$port > /dev/null << 'EOF'
 SocksPort 127.0.0.1:$port
 ExitNodes {$country}
 StrictNodes 1
-MaxCircuitDirtiness 10
+NewCircuitPeriod 10
+MaxCircuitDirtiness 15
 ClientOnly 1
 DataDirectory /var/lib/tor/custom_$port
-ENF
+EOF
 
 # 5. Create Standalone Systemd Service
-cat << ENF | sudo tee /etc/systemd/system/tor-custom-$port.service > /dev/null
+sudo tee /etc/systemd/system/tor-custom-$port.service > /dev/null << 'EOF'
 [Unit]
 Description=Tor custom instance on port $port for $country
 After=network.target
@@ -234,7 +235,11 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-ENF
+EOF
+
+# جایگزینی متغیرهای سیستم دی در اسکریپت
+sudo sed -i "s/\$port/$port/g" /etc/systemd/system/tor-custom-$port.service
+sudo sed -i "s/\$country/$country/g" /etc/systemd/system/tor-custom-$port.service
 
 # Start and Enable the custom service
 echo -e "${CYAN}[*] Starting custom Tor service for port ${port}...${NC}"
@@ -242,6 +247,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable tor-custom-$port >/dev/null 2>&1
 sudo systemctl restart tor-custom-$port
 
+# افزایش زمان انتظار به ۵۰ ثانیه برای تضمین ۱۰۰٪ ساخته شدن مدار تور و لود بی نقص در ثنایی
 echo -e "${GREEN}[+] Service started. Waiting 50 seconds for Tor circuit to build...${NC}"
 sleep 50
 
