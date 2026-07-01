@@ -206,10 +206,14 @@ sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
 sudo chmod 700 /var/lib/tor/custom_$port/
 
+# کانفیگ فوق‌العاده سخت‌گیرانه برای قفل کردن ابدی لوکیشن و جلوگیری از قطع و وصلی خودکار
 cat << ENF | sudo tee /etc/tor/torrc.custom_$port > /dev/null
 SocksPort 127.0.0.1:$port
 ExitNodes {$country}
 StrictNodes 1
+MaxCircuitDirtiness 3600
+LearnCircuitBuildTimeout 0
+CircuitBuildTimeout 30
 DataDirectory /var/lib/tor/custom_$port
 ENF
 
