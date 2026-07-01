@@ -206,19 +206,18 @@ sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
 sudo chmod 700 /var/lib/tor/custom_$port/
 
-# رفع ارور ساختاری کانفیگ و فیکس مشکل یک‌بار باز کردن و یک‌بار باز نکردن
-sudo tee /etc/tor/torrc.custom_$port > /dev/null << 'EOF'
+# کانفیگ اصلاح شده: ثبات کشور + رفرش سریع خروجی‌های خراب برای پایداری همیشگی اینترنت
+cat << ENF | sudo tee /etc/tor/torrc.custom_$port > /dev/null
 SocksPort 127.0.0.1:$port
 ExitNodes {$country}
 StrictNodes 1
-NewCircuitPeriod 10
-MaxCircuitDirtiness 15
+MaxCircuitDirtiness 180
 ClientOnly 1
 DataDirectory /var/lib/tor/custom_$port
-EOF
+ENF
 
 # 5. Create Standalone Systemd Service
-sudo tee /etc/systemd/system/tor-custom-$port.service > /dev/null << 'EOF'
+cat << ENF | sudo tee /etc/systemd/system/tor-custom-$port.service > /dev/null
 [Unit]
 Description=Tor custom instance on port $port for $country
 After=network.target
@@ -235,11 +234,7 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-EOF
-
-# جایگزینی متغیرهای سیستم دی در اسکریپت
-sudo sed -i "s/\$port/$port/g" /etc/systemd/system/tor-custom-$port.service
-sudo sed -i "s/\$country/$country/g" /etc/systemd/system/tor-custom-$port.service
+ENF
 
 # Start and Enable the custom service
 echo -e "${CYAN}[*] Starting custom Tor service for port ${port}...${NC}"
