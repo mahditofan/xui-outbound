@@ -206,12 +206,12 @@ sudo mkdir -p /var/lib/tor/custom_$port
 sudo chown -R debian-tor:debian-tor /var/lib/tor/custom_$port/
 sudo chmod 700 /var/lib/tor/custom_$port/
 
-# کانفیگ اصلاح شده: ثبات کشور + رفرش سریع خروجی‌های خراب برای پایداری همیشگی اینترنت
+# کانفیگ سوپرکلین و پرسرعت: رفرش مدار روی ۱۰ ثانیه برای عبور آنی از آی‌پی‌های کثیف
 cat << ENF | sudo tee /etc/tor/torrc.custom_$port > /dev/null
 SocksPort 127.0.0.1:$port
 ExitNodes {$country}
 StrictNodes 1
-MaxCircuitDirtiness 180
+MaxCircuitDirtiness 10
 ClientOnly 1
 DataDirectory /var/lib/tor/custom_$port
 ENF
@@ -242,7 +242,6 @@ sudo systemctl daemon-reload
 sudo systemctl enable tor-custom-$port >/dev/null 2>&1
 sudo systemctl restart tor-custom-$port
 
-# افزایش زمان انتظار به ۵۰ ثانیه برای تضمین ۱۰۰٪ ساخته شدن مدار تور و لود بی نقص در ثنایی
 echo -e "${GREEN}[+] Service started. Waiting 50 seconds for Tor circuit to build...${NC}"
 sleep 50
 
